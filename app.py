@@ -1,6 +1,9 @@
 import streamlit as st
 import json
 import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from fpdf import FPDF
 
 ARQUIVO="dados.json"
 
@@ -27,62 +30,110 @@ menu=st.sidebar.selectbox("Menu",[
 "Relatório financeiro"
 ])
 
+# ---------------- MEMBROS ----------------
+
 if menu=="Adicionar membro":
+
+    st.header("Cadastrar membro")
 
     nome=st.text_input("Nome do membro")
 
     if st.button("Cadastrar membro"):
-        dados["membros"].append(nome)
-        salvar(dados)
-        st.success("Membro cadastrado")
+        if nome:
+            dados["membros"].append(nome)
+            salvar(dados)
+            st.success("Membro cadastrado")
 
     st.subheader("Membros cadastrados")
 
-    for m in dados["membros"]:
-        st.write(m)
+    for i,m in enumerate(dados["membros"]):
 
+        col1,col2=st.columns([4,1])
+
+        col1.write(m)
+
+        if col2.button("Excluir",key=f"m{i}"):
+            dados["membros"].pop(i)
+            salvar(dados)
+            st.experimental_rerun()
+
+# ---------------- CLIENTES ----------------
 
 if menu=="Adicionar cliente":
 
+    st.header("Cadastrar cliente")
+
     cliente=st.text_input("Nome do cliente")
     valor=st.number_input("Valor recebido",0.0)
-    membro=st.selectbox("Quem recebeu",dados["membros"])
+
+    if len(dados["membros"])>0:
+        membro=st.selectbox("Quem recebeu",dados["membros"])
+    else:
+        st.warning("Cadastre um membro primeiro")
+        membro=None
 
     if st.button("Adicionar cliente"):
-        dados["clientes"].append({
-        "cliente":cliente,
-        "valor":valor,
-        "membro":membro
-        })
-        salvar(dados)
-        st.success("Cliente registrado")
+        if cliente and membro:
+            dados["clientes"].append({
+                "cliente":cliente,
+                "valor":valor,
+                "membro":membro
+            })
+            salvar(dados)
+            st.success("Cliente registrado")
 
     st.subheader("Clientes registrados")
 
-    for c in dados["clientes"]:
-        st.write(c["cliente"],"R$",c["valor"],"-",c["membro"])
+    for i,c in enumerate(dados["clientes"]):
 
+        col1,col2=st.columns([5,1])
+
+        col1.write(f'{c["cliente"]} - R${c["valor"]} - {c["membro"]}')
+
+        if col2.button("Excluir",key=f"c{i}"):
+            dados["clientes"].pop(i)
+            salvar(dados)
+            st.experimental_rerun()
+
+# ---------------- DESPESAS ----------------
 
 if menu=="Adicionar despesa":
 
+    st.header("Registrar despesa")
+
     descricao=st.text_input("Descrição da despesa")
     valor=st.number_input("Valor da despesa",0.0)
-    membro=st.selectbox("Quem pagou",dados["membros"])
+
+    if len(dados["membros"])>0:
+        membro=st.selectbox("Quem pagou",dados["membros"])
+    else:
+        st.warning("Cadastre um membro primeiro")
+        membro=None
 
     if st.button("Registrar despesa"):
-        dados["despesas"].append({
-        "descricao":descricao,
-        "valor":valor,
-        "membro":membro
-        })
-        salvar(dados)
-        st.success("Despesa registrada")
+        if descricao and membro:
+            dados["despesas"].append({
+                "descricao":descricao,
+                "valor":valor,
+                "membro":membro
+            })
+            salvar(dados)
+            st.success("Despesa registrada")
 
     st.subheader("Despesas registradas")
 
-    for d in dados["despesas"]:
-        st.write(d["descricao"],"R$",d["valor"],"- pago por",d["membro"])
+    for i,d in enumerate(dados["despesas"]):
 
+        col1,col2=st.columns([5,1])
+
+        col1.write(f'{d["descricao"]} - R${d["valor"]} - pago por {d["membro"]}')
+
+        if col2.button("Excluir",key=f"d{i}"):
+            dados["despesas"].pop(i)
+            salvar(dados)
+            st.experimental_rerun()
+
+# ---------------- RELATÓRIO ----------------
 
 if menu=="Relatório financeiro":
 
@@ -114,9 +165,13 @@ if menu=="Relatório financeiro":
 
         st.subheader("Divisão por membro")
 
+        tabela=[]
+
         for m in dados["membros"]:
 
             saldo=recebido[m]-despesas[m]
+
+            diferenca=saldo-divisao
 
             st.write("-----")
             st.write("Membro:",m)
@@ -125,10 +180,61 @@ if menu=="Relatório financeiro":
             st.write("Saldo:",saldo)
             st.write("Deveria receber:",divisao)
 
-            diferenca=saldo-divisao
-
             if diferenca>0:
                 st.write("Deve pagar:",diferenca)
-
             else:
                 st.write("Deve receber:",abs(diferenca))
+
+            tabela.append({
+                "Membro":m,
+                "Recebeu":recebido[m],
+                "Pagou despesas":despesas[m],
+                "Saldo":saldo
+            })
+
+        # -------- GRAFICO --------
+
+        if len(dados["clientes"])>0:
+
+            nomes=[c["cliente"] for c in dados["clientes"]]
+            valores=[c["valor"] for c in dados["clientes"]]
+
+            fig,ax=plt.subplots()
+
+            ax.bar(nomes,valores)
+
+            ax.set_title("Faturamento por cliente")
+
+            st.pyplot(fig)
+
+        # -------- EXCEL --------
+
+        if st.button("Exportar Excel"):
+
+            df=pd.DataFrame(tabela)
+
+            df.to_excel("relatorio_financeiro.xlsx",index=False)
+
+            st.success("Arquivo Excel gerado")
+
+        # -------- PDF --------
+
+        if st.button("Gerar PDF"):
+
+            pdf=FPDF()
+
+            pdf.add_page()
+
+            pdf.set_font("Arial",size=12)
+
+            pdf.cell(200,10,"Sistema Financeiro",ln=True)
+            pdf.cell(200,10,"Guia Online Parapua",ln=True)
+            pdf.cell(200,10,"Direitos reservados a Kaio Marin",ln=True)
+
+            pdf.cell(200,10,f"Total arrecadado: {total}",ln=True)
+            pdf.cell(200,10,f"Total despesas: {total_despesas}",ln=True)
+            pdf.cell(200,10,f"Lucro: {lucro}",ln=True)
+
+            pdf.output("relatorio_financeiro.pdf")
+
+            st.success("PDF gerado")
